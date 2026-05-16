@@ -19,11 +19,15 @@ Schema:
 }
 
 Rules:
-- APIs = real backend endpoints (no third-party)
+- APIs = real backend endpoints
+- No third-party APIs
 - Keep output concise
-- No markdown, no <think>
+- Return raw JSON only
+- No markdown
+- No <think>
 
-Idea: ${idea}
+Idea:
+${idea}
 `;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -31,11 +35,18 @@ Idea: ${idea}
       const response = await axios.post(
         `${env.MINIMAX_BASE_URL}/chat/completions`,
         {
-          model: "minimaxai/minimax-m2.5",
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: 2000,
+          model: "minimaxai/minimax-m2.7",
+
+          messages: [
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+
           temperature: 0.2,
-          top_p: 1,
+          top_p: 0.95,
+          max_tokens: 4000,
           stream: false,
         },
         {
@@ -43,25 +54,37 @@ Idea: ${idea}
             Authorization: `Bearer ${env.MINIMAX_API_KEY}`,
             "Content-Type": "application/json",
           },
+
           timeout: 240000,
         }
       );
 
-      const content = response.data.choices?.[0]?.message?.content;
+      const content = response.data?.choices?.[0]?.message?.content;
 
-      if (!content) throw new Error("Empty response");
+      if (!content) {
+        throw new Error("Empty AI response");
+      }
 
       const parsed = safeParseJSON(content);
 
-      if (!parsed) throw new Error("Invalid JSON");
+      if (!parsed) {
+        throw new Error("Invalid JSON returned");
+      }
 
       const validated = blueprintSchema.safeParse(parsed);
 
-      if (!validated.success) throw new Error("Invalid structure");
+      if (!validated.success) {
+        console.error(validated.error.flatten());
+
+        throw new Error("Blueprint schema validation failed");
+      }
 
       return validated.data;
     } catch (error: any) {
-      console.error("AI ERROR:", error?.response?.data || error.message);
+      console.error(
+        "AI ERROR:",
+        error?.response?.data || error.message
+      );
 
       if (attempt === MAX_RETRIES) {
         throw new Error("AI failed after retries");
